@@ -1,5 +1,7 @@
 # FN SSH Console
 
+![FN SSH 使用截图](docs/images/fnssh.png)
+
 开源地址：https://github.com/qdog2012/fnssh
 
 一个用 Go 实现的 Web SSH 终端。浏览器使用 xterm.js，后端通过 WebSocket 转发到 SSH 会话。支持：
