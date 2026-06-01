@@ -1,0 +1,11 @@
+/fnssh
+/fnssh.exe
+.DS_Store
+dist/
+_build/
+_refs/
+_tools/
+_remote_fnssh/
+_verify_fpk*/
+*.fpk
+_pkg/fnssh/app/bin/fnssh

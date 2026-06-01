@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>FN SSH Console</title>
+    <link rel="stylesheet" href="/vendor/xterm.css" />
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="terminal-window" aria-label="FN SSH Console">
+        <header class="titlebar">
+          <div class="tab-region">
+            <div id="sessionList" class="session-list" role="tablist" aria-label="终端会话"></div>
+            <button id="newSessionBtn" class="tab-add" type="button" title="新建会话" aria-label="新建会话">
+              <i data-lucide="plus"></i>
+            </button>
+          </div>
+          <div class="window-tools">
+            <span id="activeState" class="state-pill idle">未连接</span>
+            <button id="clearBtn" class="icon-btn" type="button" title="清屏" aria-label="清屏">
+              <i data-lucide="eraser"></i>
+            </button>
+          </div>
+        </header>
+
+        <section class="profile-strip" aria-label="连接配置">
+          <div class="brand-row">
+            <div class="brand-mark">fn</div>
+            <div>
+              <h1 id="terminalTitle">终端 1</h1>
+              <p id="serverHint">加载配置中</p>
+            </div>
+          </div>
+
+          <div class="connection-layout">
+            <label class="field host-field">
+              <span>主机</span>
+              <input id="hostInput" autocomplete="off" placeholder="127.0.0.1" />
+            </label>
+
+            <label class="field port-field">
+              <span>端口</span>
+              <input id="portInput" type="number" min="1" max="65535" value="22" />
+            </label>
+
+            <button id="advancedToggle" class="tertiary-btn" type="button" aria-expanded="false" aria-controls="advancedPanel">
+              <i data-lucide="sliders-horizontal"></i>
+              <span>高级</span>
+            </button>
+
+            <div id="advancedPanel" class="advanced-panel collapsed">
+              <label class="field user-field">
+                <span>用户名</span>
+                <input id="usernameInput" autocomplete="username" placeholder="可留空" />
+              </label>
+
+              <label class="field auth-field">
+                <span>认证</span>
+                <select id="authSelect">
+                  <option value="password">密码</option>
+                  <option value="key">私钥</option>
+                </select>
+              </label>
+
+              <label id="passwordField" class="field secret-field">
+                <span>密码</span>
+                <input id="passwordInput" type="password" autocomplete="current-password" placeholder="可留空" />
+              </label>
+
+              <label id="keyField" class="field key-field hidden">
+                <span>私钥</span>
+                <textarea id="privateKeyInput" spellcheck="false" placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"></textarea>
+              </label>
+
+              <label id="passphraseField" class="field passphrase-field hidden">
+                <span>私钥口令</span>
+                <input id="passphraseInput" type="password" autocomplete="off" />
+              </label>
+
+              <label id="tokenField" class="field token-field hidden">
+                <span>访问令牌</span>
+                <input id="tokenInput" type="password" autocomplete="off" />
+              </label>
+            </div>
+          </div>
+
+          <div class="button-row">
+            <button id="connectBtn" class="primary-btn" type="button">
+              <i data-lucide="plug"></i>
+              <span>连接</span>
+            </button>
+            <button id="disconnectBtn" class="secondary-btn" type="button">
+              <i data-lucide="unplug"></i>
+              <span>断开</span>
+            </button>
+          </div>
+        </section>
+
+        <section class="workspace">
+          <div id="terminalStack" class="terminal-stack"></div>
+        </section>
+      </section>
+    </main>
+
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+    <script src="/vendor/xterm.js"></script>
+    <script src="/vendor/addon-fit.js"></script>
+    <script src="/vendor/lucide.min.js"></script>
+    <script src="/app.js"></script>
+  </body>
+</html>

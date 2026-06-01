@@ -1,0 +1,28 @@
+{
+    "data-share":
+    {
+        "shares":
+        [
+            {
+                "name": "fnssh",
+                "permission":
+                {
+                    "rw":
+                    [
+                        "fnssh"
+                    ]
+                }
+            },
+            {
+                "name": "fnssh/data",
+                "permission":
+                {
+                    "rw":
+                    [
+                        "fnssh"
+                    ]
+                }
+            }
+        ]
+    }
+}
