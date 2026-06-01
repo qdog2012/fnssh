@@ -2,7 +2,6 @@ const els = {
   serverHint: document.querySelector("#serverHint"),
   sessionList: document.querySelector("#sessionList"),
   newSessionBtn: document.querySelector("#newSessionBtn"),
-  activeState: document.querySelector("#activeState"),
   advancedToggle: document.querySelector("#advancedToggle"),
   advancedPanel: document.querySelector("#advancedPanel"),
   hostInput: document.querySelector("#hostInput"),
@@ -451,15 +450,23 @@ function fitActive(sendResize) {
 }
 
 function paintStatus(status) {
-  els.activeState.className = `state-pill ${status}`;
+  els.connectBtn.classList.remove(
+    "connection-status-idle",
+    "connection-status-connecting",
+    "connection-status-connected",
+    "connection-status-error",
+  );
+  els.connectBtn.classList.add(`connection-status-${status}`);
+  els.connectBtn.setAttribute("aria-busy", status === "connecting" ? "true" : "false");
+  const label = els.connectBtn.querySelector("span");
   if (status === "connected") {
-    els.activeState.textContent = "已连接";
+    label.textContent = "已连接";
   } else if (status === "connecting") {
-    els.activeState.textContent = "连接中";
+    label.textContent = "连接中";
   } else if (status === "error") {
-    els.activeState.textContent = "错误";
+    label.textContent = "错误";
   } else {
-    els.activeState.textContent = "未连接";
+    label.textContent = "连接";
   }
 }
 

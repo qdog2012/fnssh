@@ -18,7 +18,6 @@
             </button>
           </div>
           <div class="window-tools">
-            <span id="activeState" class="state-pill idle">未连接</span>
             <button id="clearBtn" class="icon-btn" type="button" title="清屏" aria-label="清屏">
               <i data-lucide="eraser"></i>
             </button>
@@ -48,6 +47,16 @@
             <button id="advancedToggle" class="tertiary-btn" type="button" aria-expanded="false" aria-controls="advancedPanel">
               <i data-lucide="sliders-horizontal"></i>
               <span>高级</span>
+            </button>
+
+            <button id="connectBtn" class="primary-btn connection-status-idle" type="button">
+              <i data-lucide="plug"></i>
+              <span>连接</span>
+            </button>
+
+            <button id="disconnectBtn" class="secondary-btn" type="button">
+              <i data-lucide="unplug"></i>
+              <span>断开</span>
             </button>
 
             <div id="advancedPanel" class="advanced-panel collapsed">
@@ -84,17 +93,6 @@
                 <input id="tokenInput" type="password" autocomplete="off" />
               </label>
             </div>
-          </div>
-
-          <div class="button-row">
-            <button id="connectBtn" class="primary-btn" type="button">
-              <i data-lucide="plug"></i>
-              <span>连接</span>
-            </button>
-            <button id="disconnectBtn" class="secondary-btn" type="button">
-              <i data-lucide="unplug"></i>
-              <span>断开</span>
-            </button>
           </div>
         </section>
 
