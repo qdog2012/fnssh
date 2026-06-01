@@ -129,11 +129,18 @@ function createSession() {
   term.open(terminalFrame);
   term.writeln(`\x1b[38;5;114m${title}\x1b[0m`);
   term.onData((data) => {
-    const session = sessionById(id);
-    if (!session || !["connecting", "connected"].includes(session.status) || !session.ws || session.ws.readyState !== WebSocket.OPEN) {
-      return;
+    sendTerminalInput(sessionById(id), data);
+  });
+  term.attachCustomKeyEventHandler((event) => {
+    if (event.type === "keydown" && (event.key === "Escape" || event.code === "Escape")) {
+      const sent = sendTerminalInput(sessionById(id), "\x1b");
+      if (sent) {
+        event.preventDefault();
+        event.stopPropagation();
+        return false;
+      }
     }
-    session.ws.send(JSON.stringify({ type: "input", data }));
+    return true;
   });
 
   const session = {
@@ -177,6 +184,14 @@ function activeSession() {
 
 function sessionById(id) {
   return state.sessions.find((session) => session.id === id);
+}
+
+function sendTerminalInput(session, data) {
+  if (!data || !session || !["connecting", "connected"].includes(session.status) || !session.ws || session.ws.readyState !== WebSocket.OPEN) {
+    return false;
+  }
+  session.ws.send(JSON.stringify({ type: "input", data }));
+  return true;
 }
 
 function renderSessions() {
