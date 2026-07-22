@@ -35,6 +35,7 @@ const state = {
   activeId: null,
   counter: 0,
   focusTimer: 0,
+  hostTitleFocusUntil: 0,
 };
 
 const terminalRowGuard = 1;
@@ -91,6 +92,7 @@ function wireUI() {
   initHostFocusBridge();
   document.addEventListener("keydown", handleTerminalEscapeCapture, true);
   document.addEventListener("pointerdown", () => scheduleActiveTerminalFocus(2), true);
+  document.addEventListener("mouseout", markHostTitleFocusIntent, true);
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible") {
       fitActive(true);
@@ -106,6 +108,7 @@ function wireUI() {
   els.connectBtn.addEventListener("click", connectActive);
   els.disconnectBtn.addEventListener("click", disconnectActive);
   els.clearBtn.addEventListener("click", () => activeSession()?.term.clear());
+  window.addEventListener("blur", restoreFocusAfterHostTitleClick);
   window.addEventListener("focus", () => scheduleActiveTerminalFocus());
   window.addEventListener("pageshow", () => scheduleActiveTerminalFocus());
   window.addEventListener("message", handleHostMessage);
@@ -240,6 +243,20 @@ function sendEscapeToTerminal(session, event) {
     event.stopImmediatePropagation();
   }
   return true;
+}
+
+function markHostTitleFocusIntent(event) {
+  const session = activeSession();
+  if (!session || !terminalHasFocus(session) || event.relatedTarget) return;
+  if (event.clientY <= 6 && event.clientX >= 0 && event.clientX <= window.innerWidth) {
+    state.hostTitleFocusUntil = Date.now() + 900;
+  }
+}
+
+function restoreFocusAfterHostTitleClick() {
+  if (Date.now() > state.hostTitleFocusUntil) return;
+  state.hostTitleFocusUntil = 0;
+  scheduleActiveTerminalFocus(10);
 }
 
 function scheduleActiveTerminalFocus(attempts = 6) {
