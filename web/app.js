@@ -87,6 +87,7 @@ async function loadConfig() {
 }
 
 function wireUI() {
+  document.addEventListener("keydown", handleTerminalEscapeCapture, true);
   els.newSessionBtn.addEventListener("click", () => createSession());
   els.advancedToggle.addEventListener("click", toggleAdvancedPanel);
   els.hostInput.addEventListener("input", syncActiveForm);
@@ -131,13 +132,8 @@ function createSession() {
     sendTerminalInput(sessionById(id), data);
   });
   term.attachCustomKeyEventHandler((event) => {
-    if (event.type === "keydown" && (event.key === "Escape" || event.code === "Escape")) {
-      const sent = sendTerminalInput(sessionById(id), "\x1b");
-      if (sent) {
-        event.preventDefault();
-        event.stopPropagation();
-        return false;
-      }
+    if (event.type === "keydown" && isPlainEscape(event)) {
+      return !sendEscapeToTerminal(sessionById(id), event);
     }
     return true;
   });
@@ -190,6 +186,33 @@ function sendTerminalInput(session, data) {
     return false;
   }
   session.ws.send(JSON.stringify({ type: "input", data }));
+  return true;
+}
+
+function handleTerminalEscapeCapture(event) {
+  if (!isPlainEscape(event)) return;
+  const session = activeSession();
+  const target = event.target;
+  if (!session || !(target instanceof Node) || !session.pane.contains(target)) return;
+  sendEscapeToTerminal(session, event);
+}
+
+function isPlainEscape(event) {
+  return (
+    (event.key === "Escape" || event.key === "Esc" || event.code === "Escape" || event.keyCode === 27 || event.which === 27) &&
+    !event.altKey &&
+    !event.ctrlKey &&
+    !event.metaKey
+  );
+}
+
+function sendEscapeToTerminal(session, event) {
+  if (!sendTerminalInput(session, "\x1b")) return false;
+  event.preventDefault();
+  event.stopPropagation();
+  if (typeof event.stopImmediatePropagation === "function") {
+    event.stopImmediatePropagation();
+  }
   return true;
 }
 
