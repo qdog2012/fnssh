@@ -35,6 +35,7 @@ const state = {
   activeId: null,
   counter: 0,
   focusTimer: 0,
+  hostActivationTimer: 0,
   focusAllowedUntil: 0,
 };
 
@@ -338,26 +339,61 @@ function initHostActivationBridge() {
   if (!frame || !parentDocument) return;
 
   const hostWindow = findHostWindowElement(frame, parentDocument);
-  if (!hostWindow) return;
+  const handleActivation = (event) => {
+    if (!isHostActivationEvent(event, frame, hostWindow, parentDocument)) return;
+    scheduleHostActivationFocus(frame, parentDocument);
+  };
 
-  parentDocument.addEventListener("pointerdown", (event) => {
-    const target = event.target;
-    if (!(target instanceof Node) || frame.contains(target) || !hostWindow.contains(target)) return;
-    window.setTimeout(() => {
-      if (!isFrameContentTopmost(frame, parentDocument)) return;
-      try {
-        frame.focus({ preventScroll: true });
-      } catch {
-        try {
-          frame.focus();
-        } catch {
-          return;
-        }
-      }
-      allowTerminalFocus();
-      scheduleActiveTerminalFocus(8);
-    }, 80);
-  }, true);
+  parentDocument.addEventListener("pointerdown", handleActivation, true);
+  parentDocument.addEventListener("pointerup", handleActivation, true);
+  parentDocument.addEventListener("click", handleActivation, true);
+}
+
+function isHostActivationEvent(event, frame, hostWindow, parentDocument) {
+  const target = event.target;
+  if (!isParentNode(target, parentDocument) || frame.contains(target)) return false;
+  if (hostWindow && hostWindow.contains(target)) return true;
+  return isLikelyHostTitleBandClick(event, frame);
+}
+
+function isParentNode(value, parentDocument) {
+  const ParentNode = parentDocument.defaultView?.Node;
+  if (ParentNode && value instanceof ParentNode) return true;
+  return Boolean(value && typeof value.nodeType === "number");
+}
+
+function isLikelyHostTitleBandClick(event, frame) {
+  if (typeof event.clientX !== "number" || typeof event.clientY !== "number") return false;
+  const rect = frame.getBoundingClientRect();
+  const titleTop = rect.top - 110;
+  const titleBottom = rect.top + 8;
+  const insideWindowWidth = event.clientX >= rect.left - 12 && event.clientX <= rect.right + 12;
+  return insideWindowWidth && event.clientY >= titleTop && event.clientY <= titleBottom;
+}
+
+function scheduleHostActivationFocus(frame, parentDocument) {
+  window.clearTimeout(state.hostActivationTimer);
+  state.hostActivationTimer = window.setTimeout(() => {
+    state.hostActivationTimer = 0;
+    if (!isFrameContentTopmost(frame, parentDocument)) return;
+    if (!focusHostFrame(frame)) return;
+    allowTerminalFocus();
+    scheduleActiveTerminalFocus(10);
+  }, 120);
+}
+
+function focusHostFrame(frame) {
+  try {
+    frame.focus({ preventScroll: true });
+    return true;
+  } catch {
+    try {
+      frame.focus();
+      return true;
+    } catch {
+      return false;
+    }
+  }
 }
 
 function findHostWindowElement(frame, parentDocument) {
