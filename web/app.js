@@ -111,7 +111,7 @@ function wireUI() {
     fitActive(true);
     scheduleActiveTerminalFocus();
   });
-  window.setInterval(restoreTerminalFocusWhenWindowIsActive, 700);
+  window.setInterval(restoreTerminalFocusWhenVisible, 500);
 
   if (window.ResizeObserver) {
     const resizeObserver = new ResizeObserver(() => {
@@ -258,6 +258,11 @@ function scheduleActiveTerminalFocus(attempts = 6) {
 function focusActiveTerminal() {
   const session = activeSession();
   if (!shouldFocusTerminal(session)) return false;
+  try {
+    window.focus();
+  } catch {
+    // Some hosts block iframe window focus; focusing xterm below still works when allowed.
+  }
   fitActive(false);
   session.term.focus();
   const textarea = session.term.textarea;
@@ -292,12 +297,11 @@ function isEditableElement(element) {
   return element.isContentEditable || tag === "input" || tag === "select" || tag === "textarea";
 }
 
-function restoreTerminalFocusWhenWindowIsActive() {
+function restoreTerminalFocusWhenVisible() {
   const session = activeSession();
   const active = document.activeElement;
   if (
     document.visibilityState === "visible" &&
-    document.hasFocus() &&
     session &&
     !terminalHasFocus(session) &&
     !(active instanceof Node && isEditableElement(active))
