@@ -34,6 +34,7 @@ const state = {
   sessions: [],
   activeId: null,
   counter: 0,
+  focusTimer: 0,
 };
 
 const terminalRowGuard = 1;
@@ -88,6 +89,12 @@ async function loadConfig() {
 
 function wireUI() {
   document.addEventListener("keydown", handleTerminalEscapeCapture, true);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") {
+      fitActive(true);
+      scheduleActiveTerminalFocus();
+    }
+  });
   els.newSessionBtn.addEventListener("click", () => createSession());
   els.advancedToggle.addEventListener("click", toggleAdvancedPanel);
   els.hostInput.addEventListener("input", syncActiveForm);
@@ -97,7 +104,22 @@ function wireUI() {
   els.connectBtn.addEventListener("click", connectActive);
   els.disconnectBtn.addEventListener("click", disconnectActive);
   els.clearBtn.addEventListener("click", () => activeSession()?.term.clear());
-  window.addEventListener("resize", () => fitActive(true));
+  window.addEventListener("focus", () => scheduleActiveTerminalFocus());
+  window.addEventListener("pageshow", () => scheduleActiveTerminalFocus());
+  window.addEventListener("message", () => scheduleActiveTerminalFocus());
+  window.addEventListener("resize", () => {
+    fitActive(true);
+    scheduleActiveTerminalFocus();
+  });
+  window.setInterval(restoreTerminalFocusWhenWindowIsActive, 700);
+
+  if (window.ResizeObserver) {
+    const resizeObserver = new ResizeObserver(() => {
+      fitActive(true);
+      scheduleActiveTerminalFocus();
+    });
+    resizeObserver.observe(els.terminalStack);
+  }
 }
 
 function createSession() {
@@ -170,7 +192,10 @@ function setActive(id) {
   }
   loadActiveToForm();
   renderSessions();
-  requestAnimationFrame(() => fitActive(true));
+  requestAnimationFrame(() => {
+    fitActive(true);
+    scheduleActiveTerminalFocus();
+  });
 }
 
 function activeSession() {
@@ -214,6 +239,71 @@ function sendEscapeToTerminal(session, event) {
     event.stopImmediatePropagation();
   }
   return true;
+}
+
+function scheduleActiveTerminalFocus(attempts = 6) {
+  window.clearTimeout(state.focusTimer);
+  const run = (remaining) => {
+    state.focusTimer = 0;
+    requestAnimationFrame(() => {
+      const focused = focusActiveTerminal();
+      if (remaining > 1 && !focused) {
+        state.focusTimer = window.setTimeout(() => run(remaining - 1), 80);
+      }
+    });
+  };
+  state.focusTimer = window.setTimeout(() => run(attempts), 0);
+}
+
+function focusActiveTerminal() {
+  const session = activeSession();
+  if (!shouldFocusTerminal(session)) return false;
+  fitActive(false);
+  session.term.focus();
+  const textarea = session.term.textarea;
+  if (textarea) {
+    try {
+      textarea.focus({ preventScroll: true });
+    } catch {
+      textarea.focus();
+    }
+  }
+  return terminalHasFocus(session);
+}
+
+function shouldFocusTerminal(session) {
+  if (!session || !["connecting", "connected"].includes(session.status)) return false;
+  if (document.visibilityState === "hidden") return false;
+  const rect = session.pane.getBoundingClientRect();
+  if (rect.width < 1 || rect.height < 1) return false;
+  const active = document.activeElement;
+  if (active instanceof Node && !session.pane.contains(active) && isEditableElement(active)) return false;
+  return true;
+}
+
+function terminalHasFocus(session) {
+  const active = document.activeElement;
+  return active instanceof Node && session.pane.contains(active);
+}
+
+function isEditableElement(element) {
+  if (!(element instanceof HTMLElement)) return false;
+  const tag = element.tagName.toLowerCase();
+  return element.isContentEditable || tag === "input" || tag === "select" || tag === "textarea";
+}
+
+function restoreTerminalFocusWhenWindowIsActive() {
+  const session = activeSession();
+  const active = document.activeElement;
+  if (
+    document.visibilityState === "visible" &&
+    document.hasFocus() &&
+    session &&
+    !terminalHasFocus(session) &&
+    !(active instanceof Node && isEditableElement(active))
+  ) {
+    scheduleActiveTerminalFocus(1);
+  }
 }
 
 function renderSessions() {
@@ -370,6 +460,7 @@ function connectActive() {
   session.status = "connecting";
   session.term.writeln("\r\n\x1b[38;5;221mConnecting...\x1b[0m");
   paintStatus("connecting");
+  scheduleActiveTerminalFocus();
   renderSessions();
 
   session.ws.addEventListener("open", () => {
@@ -393,7 +484,10 @@ function connectActive() {
     if (session.status !== "error") {
       session.status = "idle";
     }
-    if (activeSession()?.id === session.id) paintStatus(session.status);
+    if (activeSession()?.id === session.id) {
+      paintStatus(session.status);
+      scheduleActiveTerminalFocus();
+    }
     renderSessions();
   });
   session.ws.addEventListener("error", () => {
@@ -420,7 +514,10 @@ function handleServerMessage(session, event) {
     session.connected = msg.state === "connected";
     session.status = session.connected ? "connected" : "idle";
     session.term.writeln(`\r\n\x1b[38;5;114m${msg.message || msg.state}\x1b[0m`);
-    if (activeSession()?.id === session.id) paintStatus(session.status);
+    if (activeSession()?.id === session.id) {
+      paintStatus(session.status);
+      scheduleActiveTerminalFocus();
+    }
     renderSessions();
     return;
   }

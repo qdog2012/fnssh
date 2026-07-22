@@ -1,5 +1,5 @@
 appname               = fnssh
-version               = 1.0.17
+version               = 1.0.18
 display_name          = FN SSH
 desc                  = """<p>一个轻量的 Web SSH 终端，支持本地 SSH 和远程 SSH，多终端会话独立连接。</p><p>开源地址：<a href="https://github.com/qdog2012/fnssh" target="_blank">https://github.com/qdog2012/fnssh</a></p><p>请只在可信内网使用。</p>"""
 arch                  = x86_64
