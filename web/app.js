@@ -89,6 +89,7 @@ async function loadConfig() {
 
 function wireUI() {
   document.addEventListener("keydown", handleTerminalEscapeCapture, true);
+  document.addEventListener("pointerdown", () => scheduleActiveTerminalFocus(2), true);
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible") {
       fitActive(true);
@@ -106,12 +107,11 @@ function wireUI() {
   els.clearBtn.addEventListener("click", () => activeSession()?.term.clear());
   window.addEventListener("focus", () => scheduleActiveTerminalFocus());
   window.addEventListener("pageshow", () => scheduleActiveTerminalFocus());
-  window.addEventListener("message", () => scheduleActiveTerminalFocus());
+  window.addEventListener("message", handleHostMessage);
   window.addEventListener("resize", () => {
     fitActive(true);
     scheduleActiveTerminalFocus();
   });
-  window.setInterval(restoreTerminalFocusWhenVisible, 500);
 
   if (window.ResizeObserver) {
     const resizeObserver = new ResizeObserver(() => {
@@ -258,11 +258,6 @@ function scheduleActiveTerminalFocus(attempts = 6) {
 function focusActiveTerminal() {
   const session = activeSession();
   if (!shouldFocusTerminal(session)) return false;
-  try {
-    window.focus();
-  } catch {
-    // Some hosts block iframe window focus; focusing xterm below still works when allowed.
-  }
   fitActive(false);
   session.term.focus();
   const textarea = session.term.textarea;
@@ -297,17 +292,19 @@ function isEditableElement(element) {
   return element.isContentEditable || tag === "input" || tag === "select" || tag === "textarea";
 }
 
-function restoreTerminalFocusWhenVisible() {
-  const session = activeSession();
-  const active = document.activeElement;
-  if (
-    document.visibilityState === "visible" &&
-    session &&
-    !terminalHasFocus(session) &&
-    !(active instanceof Node && isEditableElement(active))
-  ) {
-    scheduleActiveTerminalFocus(1);
+function handleHostMessage(event) {
+  if (isActivationMessage(event.data)) {
+    scheduleActiveTerminalFocus();
   }
+}
+
+function isActivationMessage(data) {
+  if (typeof data === "string") {
+    return /active|activate|focus|foreground|show|visible/i.test(data);
+  }
+  if (!data || typeof data !== "object") return false;
+  const values = [data.type, data.action, data.event, data.name, data.state, data.status].filter(Boolean);
+  return values.some((value) => /active|activate|focus|foreground|show|visible/i.test(String(value)));
 }
 
 function renderSessions() {
