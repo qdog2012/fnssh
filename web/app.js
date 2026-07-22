@@ -35,7 +35,6 @@ const state = {
   activeId: null,
   counter: 0,
   focusTimer: 0,
-  hostTitleFocusUntil: 0,
 };
 
 const terminalRowGuard = 1;
@@ -89,10 +88,8 @@ async function loadConfig() {
 }
 
 function wireUI() {
-  initHostFocusBridge();
   document.addEventListener("keydown", handleTerminalEscapeCapture, true);
   document.addEventListener("pointerdown", () => scheduleActiveTerminalFocus(2), true);
-  document.addEventListener("mouseout", markHostTitleFocusIntent, true);
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible") {
       fitActive(true);
@@ -108,7 +105,6 @@ function wireUI() {
   els.connectBtn.addEventListener("click", connectActive);
   els.disconnectBtn.addEventListener("click", disconnectActive);
   els.clearBtn.addEventListener("click", () => activeSession()?.term.clear());
-  window.addEventListener("blur", restoreFocusAfterHostTitleClick);
   window.addEventListener("focus", () => scheduleActiveTerminalFocus());
   window.addEventListener("pageshow", () => scheduleActiveTerminalFocus());
   window.addEventListener("message", handleHostMessage);
@@ -245,20 +241,6 @@ function sendEscapeToTerminal(session, event) {
   return true;
 }
 
-function markHostTitleFocusIntent(event) {
-  const session = activeSession();
-  if (!session || !terminalHasFocus(session) || event.relatedTarget) return;
-  if (event.clientY <= 6 && event.clientX >= 0 && event.clientX <= window.innerWidth) {
-    state.hostTitleFocusUntil = Date.now() + 900;
-  }
-}
-
-function restoreFocusAfterHostTitleClick() {
-  if (Date.now() > state.hostTitleFocusUntil) return;
-  state.hostTitleFocusUntil = 0;
-  scheduleActiveTerminalFocus(10);
-}
-
 function scheduleActiveTerminalFocus(attempts = 6) {
   window.clearTimeout(state.focusTimer);
   const run = (remaining) => {
@@ -292,6 +274,7 @@ function focusActiveTerminal() {
 function shouldFocusTerminal(session) {
   if (!session || !["connecting", "connected"].includes(session.status)) return false;
   if (document.visibilityState === "hidden") return false;
+  if (!document.hasFocus()) return false;
   const rect = session.pane.getBoundingClientRect();
   if (rect.width < 1 || rect.height < 1) return false;
   const active = document.activeElement;
@@ -323,87 +306,6 @@ function isActivationMessage(data) {
   if (!data || typeof data !== "object") return false;
   const values = [data.type, data.action, data.event, data.name, data.state, data.status].filter(Boolean);
   return values.some((value) => /active|activate|focus|foreground|show|visible/i.test(String(value)));
-}
-
-function initHostFocusBridge() {
-  if (window.parent === window) return;
-  let frame;
-  let parentDocument;
-  try {
-    frame = window.frameElement;
-    parentDocument = window.parent.document;
-  } catch {
-    return;
-  }
-  if (!frame || !parentDocument) return;
-
-  const hostWindow = findHostWindowElement(frame, parentDocument);
-  parentDocument.addEventListener("pointerdown", (event) => {
-    const target = event.target;
-    if (!target || frame.contains(target)) return;
-    const clickedOwnShell = hostWindow
-      ? hostWindow.contains(target)
-      : isLikelyOwnTitleBandClick(event, frame);
-    if (!clickedOwnShell || !isFrameVisibleOnTop(frame, parentDocument)) return;
-    focusHostFrame(frame);
-    scheduleActiveTerminalFocus(8);
-  }, true);
-}
-
-function findHostWindowElement(frame, parentDocument) {
-  const frameRect = frame.getBoundingClientRect();
-  let element = frame.parentElement;
-  while (element && element !== parentDocument.body && element !== parentDocument.documentElement) {
-    const rect = element.getBoundingClientRect();
-    const titleHeight = frameRect.top - rect.top;
-    const containsFrame =
-      rect.left <= frameRect.left + 2 &&
-      rect.top <= frameRect.top &&
-      rect.right >= frameRect.right - 2 &&
-      rect.bottom >= frameRect.bottom - 2;
-    const closeSize =
-      rect.width <= frameRect.width + 96 &&
-      rect.height <= frameRect.height + 128;
-    if (containsFrame && closeSize && titleHeight >= 16 && titleHeight <= 96) {
-      return element;
-    }
-    element = element.parentElement;
-  }
-  return null;
-}
-
-function isLikelyOwnTitleBandClick(event, frame) {
-  const rect = frame.getBoundingClientRect();
-  return (
-    event.clientX >= rect.left &&
-    event.clientX <= rect.right &&
-    event.clientY >= rect.top - 96 &&
-    event.clientY < rect.top
-  );
-}
-
-function isFrameVisibleOnTop(frame, parentDocument) {
-  const rect = frame.getBoundingClientRect();
-  const points = [
-    [rect.left + Math.min(48, rect.width / 2), rect.top + Math.min(48, rect.height / 2)],
-    [rect.left + rect.width / 2, rect.top + rect.height / 2],
-  ];
-  return points.some(([x, y]) => {
-    const topElement = parentDocument.elementFromPoint(x, y);
-    return topElement === frame || frame.contains(topElement);
-  });
-}
-
-function focusHostFrame(frame) {
-  try {
-    frame.focus({ preventScroll: true });
-  } catch {
-    try {
-      frame.focus();
-    } catch {
-      // The host may block direct iframe focusing.
-    }
-  }
 }
 
 function renderSessions() {
