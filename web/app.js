@@ -30,6 +30,12 @@ const config = {
   requiresToken: false,
 };
 
+const storageKeys = {
+  token: "fnssh.token",
+  lastHost: "fnssh.lastHost",
+  lastPort: "fnssh.lastPort",
+};
+
 const state = {
   sessions: [],
   activeId: null,
@@ -82,7 +88,7 @@ async function loadConfig() {
     Object.assign(config, await response.json());
     els.serverHint.textContent = `默认 ${config.localHost}:${config.localPort}`;
     els.tokenField.classList.toggle("hidden", !config.requiresToken);
-    els.tokenInput.value = localStorage.getItem("fnssh.token") || "";
+    els.tokenInput.value = localStorage.getItem(storageKeys.token) || "";
   } catch (error) {
     els.serverHint.textContent = "配置读取失败";
     showToast(error.message);
@@ -173,12 +179,13 @@ function createSession() {
     return true;
   });
 
+  const lastTarget = loadLastTarget();
   const session = {
     id,
     index: state.counter,
     title,
-    host: config.localHost,
-    port: config.localPort,
+    host: lastTarget.host,
+    port: lastTarget.port,
     username: "",
     authType: "password",
     password: "",
@@ -569,7 +576,7 @@ function connectActive() {
 
   const token = els.tokenInput.value.trim();
   if (token) {
-    localStorage.setItem("fnssh.token", token);
+    localStorage.setItem(storageKeys.token, token);
   }
 
   const wsURL = appURL("ws");
@@ -633,6 +640,9 @@ function handleServerMessage(session, event) {
   if (msg.type === "status") {
     session.connected = msg.state === "connected";
     session.status = session.connected ? "connected" : "idle";
+    if (session.connected) {
+      saveLastTarget(session);
+    }
     session.term.writeln(`\r\n\x1b[38;5;114m${msg.message || msg.state}\x1b[0m`);
     if (activeSession()?.id === session.id) {
       paintStatus(session.status);
@@ -727,4 +737,21 @@ function showToast(message) {
 
 function appURL(path) {
   return new URL(path, document.baseURI || window.location.href);
+}
+
+function loadLastTarget() {
+  const host = (localStorage.getItem(storageKeys.lastHost) || "").trim() || config.localHost;
+  const port = Number(localStorage.getItem(storageKeys.lastPort));
+  return {
+    host,
+    port: Number.isInteger(port) && port > 0 && port <= 65535 ? port : config.localPort,
+  };
+}
+
+function saveLastTarget(session) {
+  const host = (session.host || config.localHost).trim();
+  const port = session.port || config.localPort;
+  if (!host || !Number.isInteger(port) || port <= 0 || port > 65535) return;
+  localStorage.setItem(storageKeys.lastHost, host);
+  localStorage.setItem(storageKeys.lastPort, String(port));
 }
