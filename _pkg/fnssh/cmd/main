@@ -5,7 +5,9 @@ PID_FILE="${TRIM_PKGVAR}/app.pid"
 
 # write the command to start your program here 
 BIN_FILE="${TRIM_APPDEST}/bin/fnssh"
-CMD="FNSSH_ADDR=:5123 FNSSH_LOCAL_HOST=127.0.0.1 FNSSH_LOCAL_PORT=22 ${BIN_FILE}"
+APP_NAME="${TRIM_APPNAME:-fnssh}"
+SOCKET_FILE="/var/apps/${APP_NAME}/target/app.sock"
+CMD="FNSSH_ADDR=:5123 FNSSH_BASE_PATH=/app/fnssh FNSSH_UNIX_SOCKET=${SOCKET_FILE} FNSSH_LOCAL_HOST=127.0.0.1 FNSSH_LOCAL_PORT=22 ${BIN_FILE}"
 
 log_msg() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" >> ${LOG_FILE}

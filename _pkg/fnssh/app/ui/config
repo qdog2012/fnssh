@@ -4,9 +4,11 @@
             "title": "FN SSH",
             "icon": "images/ssh_{0}.png",
             "type": "iframe",
-            "protocol": "http",
-            "port": "5123",
-            "url": "/",
+            "protocol": "",
+            "port": "",
+            "url": "/app/fnssh/",
+            "gatewayPrefix": "/app/fnssh",
+            "gatewaySocket": "app.sock",
             "allUsers": false
         }
     }

@@ -77,7 +77,7 @@ async function bootstrap() {
 
 async function loadConfig() {
   try {
-    const response = await fetch("/api/config");
+    const response = await fetch(appURL("api/config"));
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     Object.assign(config, await response.json());
     els.serverHint.textContent = `默认 ${config.localHost}:${config.localPort}`;
@@ -572,7 +572,7 @@ function connectActive() {
     localStorage.setItem("fnssh.token", token);
   }
 
-  const wsURL = new URL("/ws", window.location.href);
+  const wsURL = appURL("ws");
   wsURL.protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
   if (token) wsURL.searchParams.set("token", token);
 
@@ -723,4 +723,8 @@ function showToast(message) {
   els.toast.textContent = message;
   els.toast.classList.add("show");
   toastTimer = window.setTimeout(() => els.toast.classList.remove("show"), 3400);
+}
+
+function appURL(path) {
+  return new URL(path, document.baseURI || window.location.href);
 }

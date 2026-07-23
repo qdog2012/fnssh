@@ -28,6 +28,8 @@ var staticFS embed.FS
 
 type config struct {
 	addr         string
+	basePath     string
+	unixSocket   string
 	localHost    string
 	localPort    int
 	token        string
@@ -83,18 +85,18 @@ func main() {
 		CheckOrigin:     app.checkOrigin,
 	}
 
-	mux := http.NewServeMux()
-	mux.HandleFunc("/api/config", app.handleConfig)
-	mux.HandleFunc("/ws", app.handleWS)
-	mux.Handle("/", http.FileServer(http.FS(staticRoot)))
+	handler := app.routes(staticRoot)
 
-	log.Printf("fnssh listening on %s", cfg.addr)
-	log.Fatal(http.ListenAndServe(cfg.addr, logRequests(mux)))
+	if err := serve(cfg, logRequests(handler)); err != nil {
+		log.Fatal(err)
+	}
 }
 
 func loadConfig() config {
 	return config{
 		addr:         envString("FNSSH_ADDR", ":5123"),
+		basePath:     normalizeBasePath(os.Getenv("FNSSH_BASE_PATH")),
+		unixSocket:   strings.TrimSpace(os.Getenv("FNSSH_UNIX_SOCKET")),
 		localHost:    envString("FNSSH_LOCAL_HOST", "127.0.0.1"),
 		localPort:    envInt("FNSSH_LOCAL_PORT", 22),
 		token:        strings.TrimSpace(os.Getenv("FNSSH_TOKEN")),
@@ -103,6 +105,89 @@ func loadConfig() config {
 		dialTimeout:  time.Duration(envInt("FNSSH_DIAL_TIMEOUT_SECONDS", 15)) * time.Second,
 		knownHosts:   strings.TrimSpace(os.Getenv("FNSSH_KNOWN_HOSTS")),
 	}
+}
+
+func (s *appServer) routes(staticRoot fs.FS) http.Handler {
+	appMux := http.NewServeMux()
+	appMux.HandleFunc("/api/config", s.handleConfig)
+	appMux.HandleFunc("/ws", s.handleWS)
+	appMux.Handle("/", http.FileServer(http.FS(staticRoot)))
+
+	if s.cfg.basePath == "" {
+		return appMux
+	}
+
+	rootMux := http.NewServeMux()
+	rootMux.Handle(s.cfg.basePath+"/", http.StripPrefix(s.cfg.basePath, appMux))
+	rootMux.Handle(s.cfg.basePath, http.RedirectHandler(s.cfg.basePath+"/", http.StatusTemporaryRedirect))
+	rootMux.Handle("/", appMux)
+	return rootMux
+}
+
+func normalizeBasePath(value string) string {
+	value = "/" + strings.Trim(strings.TrimSpace(value), "/")
+	if value == "/" {
+		return ""
+	}
+	return value
+}
+
+func serve(cfg config, handler http.Handler) error {
+	errCh := make(chan error, 2)
+
+	tcpServer := &http.Server{Addr: cfg.addr, Handler: handler}
+	go func() {
+		log.Printf("fnssh listening on tcp %s", cfg.addr)
+		errCh <- tcpServer.ListenAndServe()
+	}()
+
+	if cfg.unixSocket != "" {
+		listener, err := listenUnix(cfg.unixSocket)
+		if err != nil {
+			return err
+		}
+		unixServer := &http.Server{Handler: handler}
+		go func() {
+			log.Printf("fnssh listening on unix %s", cfg.unixSocket)
+			errCh <- unixServer.Serve(listener)
+		}()
+	}
+
+	return <-errCh
+}
+
+func listenUnix(socketPath string) (net.Listener, error) {
+	if err := os.MkdirAll(unixPathDir(socketPath), 0755); err != nil {
+		return nil, fmt.Errorf("create socket dir: %w", err)
+	}
+	if info, err := os.Stat(socketPath); err == nil {
+		if info.Mode()&os.ModeSocket == 0 {
+			return nil, fmt.Errorf("refuse to replace non-socket file %s", socketPath)
+		}
+		if err := os.Remove(socketPath); err != nil {
+			return nil, fmt.Errorf("remove stale socket: %w", err)
+		}
+	} else if !os.IsNotExist(err) {
+		return nil, fmt.Errorf("stat socket: %w", err)
+	}
+
+	listener, err := net.Listen("unix", socketPath)
+	if err != nil {
+		return nil, fmt.Errorf("listen unix socket: %w", err)
+	}
+	if err := os.Chmod(socketPath, 0666); err != nil {
+		_ = listener.Close()
+		return nil, fmt.Errorf("chmod unix socket: %w", err)
+	}
+	return listener, nil
+}
+
+func unixPathDir(path string) string {
+	index := strings.LastIndex(path, "/")
+	if index <= 0 {
+		return "."
+	}
+	return path[:index]
 }
 
 func envString(key, fallback string) string {
@@ -253,7 +338,22 @@ func (s *appServer) checkOrigin(r *http.Request) bool {
 	if s.cfg.allowOrigin != "" {
 		return strings.EqualFold(parsed.Host, s.cfg.allowOrigin)
 	}
-	return strings.EqualFold(parsed.Host, r.Host)
+	return sameHost(parsed.Host, r.Host, r.Header.Get("X-Forwarded-Host"), r.Header.Get("X-Forwarded-Server"))
+}
+
+func sameHost(originHost string, candidates ...string) bool {
+	originHost = normalizeHost(originHost)
+	for _, candidate := range candidates {
+		if normalizeHost(candidate) == originHost {
+			return true
+		}
+	}
+	return false
+}
+
+func normalizeHost(host string) string {
+	host = strings.TrimSpace(strings.Split(host, ",")[0])
+	return strings.ToLower(host)
 }
 
 func (s *appServer) connectSSH(ctx *wsSession, req clientMessage) error {
