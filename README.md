@@ -11,6 +11,7 @@
 - 多终端会话：每个终端 tab 独立 WebSocket 和 SSH session
 - 密码认证和 OpenSSH 私钥认证
 - 终端 resize、清屏、断开连接
+- 自动保活：每 30 秒发送 SSH 和 WebSocket 心跳，减少空闲断线；SSH 心跳超过 10 秒无响应时关闭失效连接；网页连续 90 秒未回应心跳时自动关闭对应 SSH 会话
 
 ## 运行
 
@@ -54,7 +55,9 @@ docker run --rm -p 5123:5123 \
 
 ## 飞牛 FPK
 
-当前目录已经生成 `fnssh.fpk`，可以在飞牛应用中心里手动安装。
+从 [GitHub Releases](https://github.com/qdog2012/fnssh/releases/latest) 下载 `fnssh.fpk`，可以在飞牛应用中心里手动安装。
+
+源码打包：运行 `./scripts/build-fpk.sh`，输出位于 `dist/`，包含 FPK、Linux amd64 程序和 SHA256 校验文件。
 
 这个包是原生 x86_64 应用，安装后监听 `5123` 端口，桌面入口以 iframe 方式嵌入飞牛 WebUI：
 

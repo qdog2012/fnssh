@@ -272,7 +272,8 @@ func (s *appServer) handleWS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ctx := &wsSession{conn: conn}
+	ctx := &wsSession{conn: conn, done: make(chan struct{})}
+	defer ctx.close()
 	if err := ctx.collectInteractiveCredentials(&first); err != nil {
 		ctx.send(serverMessage{Type: "error", Message: err.Error()})
 		return
@@ -281,7 +282,8 @@ func (s *appServer) handleWS(w http.ResponseWriter, r *http.Request) {
 		ctx.send(serverMessage{Type: "error", Message: err.Error()})
 		return
 	}
-	defer ctx.close()
+	ctx.startWebSocketKeepalive(30*time.Second, 90*time.Second)
+	go ctx.keepSSHAlive(30*time.Second, 10*time.Second)
 
 	ctx.send(serverMessage{Type: "status", State: "connected", Message: "SSH session connected"})
 	go ctx.copyOutput(ctx.stdout)
@@ -601,6 +603,7 @@ type wsSession struct {
 	writeMu sync.Mutex
 	closeMu sync.Mutex
 	closed  bool
+	done    chan struct{}
 }
 
 func (s *wsSession) send(msg serverMessage) {
@@ -609,8 +612,10 @@ func (s *wsSession) send(msg serverMessage) {
 	if s.isClosed() {
 		return
 	}
+	_ = s.conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
 	if err := s.conn.WriteJSON(msg); err != nil {
 		log.Printf("websocket write: %v", err)
+		s.close()
 	}
 }
 
@@ -644,6 +649,9 @@ func (s *wsSession) close() {
 		return
 	}
 	s.closed = true
+	if s.done != nil {
+		close(s.done)
+	}
 	s.closeMu.Unlock()
 
 	if s.session != nil {
@@ -661,4 +669,67 @@ func (s *wsSession) isClosed() bool {
 	s.closeMu.Lock()
 	defer s.closeMu.Unlock()
 	return s.closed
+}
+
+// Pong deadlines let the server reclaim SSH sessions after a browser loses
+// network connectivity without sending a close frame.
+func (s *wsSession) startWebSocketKeepalive(interval, timeout time.Duration) {
+	_ = s.conn.SetReadDeadline(time.Now().Add(timeout))
+	s.conn.SetPongHandler(func(string) error {
+		return s.conn.SetReadDeadline(time.Now().Add(timeout))
+	})
+	go s.keepWebSocketAlive(interval)
+}
+
+// Browser WebSocket implementations answer control pings automatically, including
+// when no terminal input or output is flowing.
+func (s *wsSession) keepWebSocketAlive(interval time.Duration) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-s.done:
+			return
+		case <-ticker.C:
+			if err := s.conn.WriteControl(websocket.PingMessage, nil, time.Now().Add(10*time.Second)); err != nil {
+				s.close()
+				return
+			}
+		}
+	}
+}
+
+func (s *wsSession) keepSSHAlive(interval, timeout time.Duration) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-s.done:
+			return
+		case <-ticker.C:
+			result := make(chan error, 1)
+			go func() {
+				// A negative reply still proves that the server is alive.
+				_, _, err := s.client.SendRequest("keepalive@openssh.com", true, nil)
+				result <- err
+			}()
+			timer := time.NewTimer(timeout)
+			select {
+			case <-s.done:
+				timer.Stop()
+				return
+			case err := <-result:
+				timer.Stop()
+				if err == nil {
+					continue
+				}
+				s.send(serverMessage{Type: "status", State: "disconnected", Message: "SSH connection lost: " + err.Error()})
+			case <-timer.C:
+				s.send(serverMessage{Type: "status", State: "disconnected", Message: "SSH keepalive timed out"})
+			}
+			// Closing the SSH transport also unblocks any outstanding keepalive request.
+			s.close()
+			return
+		}
+	}
 }

@@ -1,11 +1,13 @@
 package main
 
 import (
+	"github.com/gorilla/websocket"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"testing/fstest"
+	"time"
 )
 
 func TestRoutesServeBasePathAndRoot(t *testing.T) {
@@ -66,5 +68,82 @@ func TestCheckOriginRejectsUnrelatedHost(t *testing.T) {
 
 	if app.checkOrigin(req) {
 		t.Fatal("expected unrelated origin to be rejected")
+	}
+}
+
+func TestWebSocketKeepaliveAndCleanup(t *testing.T) {
+	sessions := make(chan *wsSession, 1)
+	stopped := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upgrader := websocket.Upgrader{}
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			return
+		}
+		session := &wsSession{conn: conn, done: make(chan struct{})}
+		sessions <- session
+		session.keepWebSocketAlive(5 * time.Millisecond)
+		close(stopped)
+	}))
+	defer server.Close()
+	conn, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(server.URL, "http"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	session := <-sessions
+	defer session.close()
+	ping := make(chan struct{}, 1)
+	conn.SetPingHandler(func(string) error {
+		select {
+		case ping <- struct{}{}:
+		default:
+		}
+		return nil
+	})
+	readDone := make(chan struct{})
+	go func() { defer close(readDone); _, _, _ = conn.ReadMessage() }()
+	select {
+	case <-ping:
+	case <-time.After(time.Second):
+		t.Fatal("no keepalive ping received")
+	}
+	session.close()
+	session.close() // Cleanup is safe when multiple goroutines detect disconnect.
+	select {
+	case <-stopped:
+	case <-time.After(time.Second):
+		t.Fatal("keepalive did not stop after close")
+	}
+	_ = conn.Close()
+	<-readDone
+}
+
+func TestWebSocketMissingPongClosesSession(t *testing.T) {
+	sessions := make(chan *wsSession, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upgrader := websocket.Upgrader{}
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			return
+		}
+		session := &wsSession{conn: conn, done: make(chan struct{})}
+		defer session.close()
+		session.startWebSocketKeepalive(5*time.Millisecond, 50*time.Millisecond)
+		sessions <- session
+		_, _, _ = conn.ReadMessage()
+	}))
+	defer server.Close()
+	conn, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(server.URL, "http"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	session := <-sessions
+	// Deliberately do not read: no pong will be sent, as with a lost network.
+	select {
+	case <-session.done:
+	case <-time.After(time.Second):
+		t.Fatal("unresponsive browser session was not closed")
 	}
 }

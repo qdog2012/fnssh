@@ -1,0 +1,30 @@
+name: Release
+on:
+  push:
+    tags:
+      - '[0-9]*'
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Verify release version
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          version=$(awk '/^version[[:space:]]*=/ {print $3}' _pkg/fnssh/manifest)
+          test "$version" = "$RELEASE_TAG"
+      - run: go test -race ./...
+      - run: go vet ./...
+      - run: ./scripts/build-fpk.sh
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          gh release create "$RELEASE_TAG" dist/fnssh.fpk dist/fnssh-linux-amd64 dist/SHA256SUMS --verify-tag --title "FN SSH $RELEASE_TAG" --notes-file docs/release-notes.md
